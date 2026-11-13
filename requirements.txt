@@ -1,0 +1,5 @@
+# 语音克隆独立服务（主进程）依赖 —— 不含 ONNX 推理依赖
+# 推理依赖见 requirements-moss-tts.txt，装在 .venv-moss / bridge 容器里
+flask>=2.3,<4
+requests>=2.31
+waitress>=3.0,<4

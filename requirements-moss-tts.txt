@@ -1,0 +1,23 @@
+# MOSS-TTS-Nano (0.1B) ONNX CPU 推理的【可选】依赖。
+# 主服务 requirements.txt 不依赖这些包：引擎按需导入，未安装时 /v1/voice-clone/status
+# 会返回清晰的安装指引，页面仍可打开。
+#
+# 推荐装到独立虚拟环境（Windows 上尤其重要，官方 requirements.txt 里的
+# pynini / WeTextProcessing 需要编译，ONNX 路径已在本项目里显式关闭）：
+#
+#   python -m venv .venv-moss
+#   .venv-moss\Scripts\activate          # Linux/macOS: source .venv-moss/bin/activate
+#   pip install -r requirements-moss-tts.txt
+#   set MOSS_TTS_PYTHON=.venv-moss\Scripts\python.exe
+#   set MOSS_TTS_REPO=<官方仓库本地路径>
+#
+# 若官方 runtime 后续新增依赖，按启动报错补装即可；也可以直接用官方仓库的
+# requirements.txt（会额外引入 torch / pynini 等重依赖）。
+
+onnxruntime>=1.20.0
+numpy>=1.24
+soundfile>=0.12.1
+sentencepiece>=0.1.99
+huggingface_hub>=0.24.0
+requests>=2.31.0
+tqdm>=4.66.0
