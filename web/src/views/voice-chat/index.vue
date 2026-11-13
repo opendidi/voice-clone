@@ -84,7 +84,6 @@ import {
   type VoiceProfile,
 } from '@/api/voice-clone'
 import {
-  apiCancelVoiceChatJob,
   apiCreateVoiceChatTurn,
   apiGetVoiceChatJob,
   apiVoiceChatStatus,
@@ -220,14 +219,6 @@ async function submit(blob: Blob) {
     timer = window.setTimeout(() => void step(), 700)
   }
   void step()
-}
-
-async function cancel() {
-  const id = (result.value as unknown as { id?: string })?.id
-  stopPolling()
-  running.value = false
-  message.info('已停止')
-  void id
 }
 
 onMounted(() => {
