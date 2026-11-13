@@ -9,6 +9,9 @@ app/static/voice-profiles/*
 !app/static/voice-clone/.gitkeep
 !app/static/voice-profiles/.gitkeep
 
+# 本地工作区数据（不进版本库）
+.workbuddy/
+
 # Python / Node
 __pycache__/
 *.py[cod]
