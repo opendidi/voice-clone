@@ -5,7 +5,7 @@
   * ASR  —— app/util/asr.py（SenseVoice-small，缺依赖则 mock）
   * LLM  —— app/util/llm.py（Qwen2-0.5B，缺依赖则 mock）
   * TTS  —— 复用 MOSS-TTS-Nano（app/util/moss_tts.py），产物照常走 owner 隔离
-语音聊天是『一问一答』短任务，复用 jobs 异步链路做阶段进度（听写中/思考中/合成中）。
+语音聊天是多轮对话，复用 jobs 异步链路做阶段进度（听写中/思考中/合成中）。
 """
 from __future__ import annotations
 
@@ -49,8 +49,12 @@ def run_pipeline(
     uid: str,
     profile_id: str | None,
     report: Report | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """跑完一次语音聊天回合，返回 {transcript, reply, audio, backends}。"""
+    """跑完一次语音聊天回合，返回 {transcript, reply, audio, backends}。
+
+    history 为前几轮对话（[{role, content}]），用于在 LLM 侧保留多轮记忆。
+    """
     def step(stage: str, percent: int, detail: str = "") -> None:
         if report is not None:
             report(stage, percent, detail)
@@ -60,9 +64,11 @@ def run_pipeline(
     transcript = asr.transcribe(audio_path)
     step("听写完成", 35)
 
-    # 2) 思考
+    # 2) 思考（带上历史，形成多轮上下文）
     step("正在思考", 45)
-    reply = llm.chat([{"role": "user", "content": transcript}])
+    messages: list[dict[str, str]] = list(history or [])
+    messages.append({"role": "user", "content": transcript})
+    reply = llm.chat(messages)
     step("思考完成", 70)
 
     # 3) 合成（复用 MOSS-TTS，内部自行占用推理槽位并发布产物）

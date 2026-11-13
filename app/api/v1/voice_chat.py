@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
+import json
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -71,6 +72,21 @@ def create_turn():
         return _error(StatusCode.BAD_REQUEST, "请上传一段录音")
     profile_id = str(request.form.get("profile_id") or "").strip() or None
 
+    # 解析多轮历史（前端把前几轮对话以 JSON 串传入），非法则忽略
+    history: list[dict[str, str]] | None = None
+    raw_history = request.form.get("history")
+    if raw_history:
+        try:
+            parsed = json.loads(raw_history)
+            if isinstance(parsed, list):
+                history = [
+                    {"role": str(item.get("role", "")), "content": str(item.get("content", ""))}
+                    for item in parsed
+                    if isinstance(item, dict) and item.get("content")
+                ] or None
+        except (ValueError, TypeError):
+            history = None
+
     uid = current_uid()
     work = moss_tts.tmp_dir() / f"vc-{uuid.uuid4().hex[:16]}"
     work.mkdir(parents=True, exist_ok=True)
@@ -91,6 +107,7 @@ def create_turn():
                 report=lambda stage, percent, detail="": jobs.report_progress(
                     job, stage, percent, detail
                 ),
+                history=history,
             )
         finally:
             shutil.rmtree(work, ignore_errors=True)

@@ -54,6 +54,12 @@ export interface VoiceChatStatus {
   tts: { backend: string; ready: boolean; mode?: string; hint: string }
 }
 
+/** 历史轮次，用于把前几轮对话传给 LLM 形成多轮记忆。 */
+export interface VoiceChatHistoryItem {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export async function apiVoiceChatStatus(): Promise<VoiceChatStatus> {
   return unwrap(
     await http.get<Envelope<VoiceChatStatus>>('/voice-chat/status', {
@@ -66,10 +72,12 @@ export async function apiVoiceChatStatus(): Promise<VoiceChatStatus> {
 export async function apiCreateVoiceChatTurn(
   audio: Blob,
   profileId: string,
+  history?: VoiceChatHistoryItem[],
 ): Promise<VoiceChatJobStatus> {
   const fd = new FormData()
   fd.append('audio', audio, 'input.wav')
   if (profileId) fd.append('profile_id', profileId)
+  if (history && history.length) fd.append('history', JSON.stringify(history))
   return unwrap(
     await http.post<Envelope<VoiceChatJobStatus>>('/voice-chat/turn', fd, {
       baseURL: BASE,
