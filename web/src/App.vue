@@ -33,14 +33,4 @@ const tabs = [
 const active = ref<string>('lab')
 </script>
 
-<style scoped>
-.app-shell { min-height: 100vh; background: #f4f6fb; }
-.app-tabs { background: #fff; border-bottom: 1px solid #e6eaf2; }
-.tabs-inner { max-width: 1240px; margin: 0 auto; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.tabs-left { display: flex; gap: 4px; }
-.app-tabs button { border: none; background: transparent; padding: 13px 16px; font-size: 13px; color: #6b76a0; cursor: pointer; border-bottom: 2px solid transparent; }
-.app-tabs button:hover { color: #4b5bd6; }
-.app-tabs button.active { color: #4b5bd6; border-bottom-color: #5c6ff0; font-weight: 600; }
-.tabs-tip { font-size: 11px; color: #a3abc0; }
-@media (max-width: 620px) { .tabs-inner { padding: 0 16px; } .tabs-tip { display: none; } }
-</style>
+<style lang="scss" scoped src="./App.scss"></style>

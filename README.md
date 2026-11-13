@@ -164,6 +164,10 @@ curl http://127.0.0.1:5002/v1/voice-clone/jobs/<job_id>
 - 音色库支持列表、选择、删除；播报支持**长文模式**（自动分句 + 拼接）与
   **逐句实时播报**（边合成下一句边播放当前句，可随时停止）。
 - 上传区支持键盘操作（Enter/Space）与 focus 样式。
+- 组件样式改用 SCSS：装 `sass` 预处理器（Vite 原生支持，无需额外插件），
+  三个组件通过 `<style lang="scss" scoped src="...">` 引用同名 `.scss` 文件；
+  共享变量与 mixin 在 `web/src/styles/_variables.scss` / `_mixins.scss`，
+  预处理器参数统一在 `vite.config.ts` 的 `css.preprocessorOptions.scss` 配置。
 - antd 只按需引入 message 样式，生产产物 CSS 49KB / JS 255KB。
 
 ## 生产部署

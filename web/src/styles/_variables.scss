@@ -1,0 +1,52 @@
+// 全局设计变量：颜色 / 圆角 / 阴影 / 断点
+// 组件里统一 @use "../../styles/variables" as *; 使用
+
+// 品牌与渐变
+$brand: #4b5bd6;
+$brand-2: #5c6ff0;
+$brand-3: #12a9c4;
+$brand-soft: #eef0ff;
+$brand-softer: #f2f4ff;
+
+// 文字
+$ink: #1c2333;
+$text: #2b3350;
+$text-2: #44506a;
+$text-3: #6b76a0;
+$muted: #8a93a8;
+$muted-2: #98a1b8;
+$white: #fff;
+
+// 表面与描边
+$page: #f4f6fb;
+$surface: #fff;
+$panel: #f7f9fd;
+$panel-2: #fafbff;
+$line: #e6eaf2;
+$line-soft: #eef1f7;
+$line-strong: #c9d1e6;
+$input-line: #dfe4f0;
+
+// 语义色
+$ok: #1f7a48;
+$ok-bg: #f0fbf4;
+$ok-line: #bde6cd;
+$warn: #8a6314;
+$warn-bg: #fff9ec;
+$warn-line: #f0d9a8;
+$danger: #a63f3f;
+$danger-2: #c34a4a;
+$danger-bg: #fff4f4;
+$danger-line: #f6d4d4;
+
+// 形状
+$radius-lg: 14px;
+$radius: 10px;
+$radius-sm: 9px;
+$radius-xs: 8px;
+$shadow-card: 0 2px 12px rgba(30, 45, 90, 0.035);
+$gradient-brand: linear-gradient(100deg, $brand, $brand-2 50%, $brand-3);
+
+// 响应式断点
+$bp-md: 980px;
+$bp-sm: 620px;
