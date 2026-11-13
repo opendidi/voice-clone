@@ -86,7 +86,7 @@
 }
 .audio-player { width: 100%; height: 38px; }
 .preview-fail { color: $danger; }
-.text-area { @include text-area(120px); font-size: 13px; line-height: 1.7; }
+.text-area { font-size: 13px; line-height: 1.7; @include text-area(120px); }
 .text-foot {
   display: flex;
   justify-content: space-between;
@@ -99,13 +99,13 @@
 .check-label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .action-row { display: flex; gap: 9px; flex-wrap: wrap; }
 .primary-btn {
-  @include primary-button(40px);
   flex: 1;
   min-width: 130px;
   font-size: 13px;
   font-weight: 600;
+  @include primary-button(40px);
 }
-.progress-box { @include progress-box; margin-top: 14px; }
+.progress-box { margin-top: 14px; @include progress-box; }
 .segment-tip {
   margin-top: 12px;
   font-size: 12px;
@@ -134,8 +134,10 @@
 }
 .meta-grid {
   @include meta-grid(4);
-  gap: 8px;
-  margin-top: 14px;
+  & {
+    gap: 8px;
+    margin-top: 14px;
+  }
   > div { padding: 9px 11px; gap: 4px; }
   strong { font-size: 12.5px; }
 }

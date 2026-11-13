@@ -216,10 +216,10 @@
 
 .record-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .outline-btn {
-  @include soft-button;
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  @include soft-button;
   &.recording { border-color: #e8a0a0; color: $danger-2; background: #fff6f6; }
 }
 .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #e05252; animation: pulse 1s infinite; }
@@ -264,7 +264,7 @@
 }
 .ref-saved { font-size: 12px; color: #16a34a; }
 
-.text-area { @include text-area(108px); font-size: 13px; line-height: 1.7; }
+.text-area { font-size: 13px; line-height: 1.7; @include text-area(108px); }
 .text-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 9px 0 16px; font-size: 11px; color: $muted-2; }
 .examples { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
@@ -308,7 +308,6 @@
 }
 
 .primary-btn {
-  @include primary-button(44px);
   width: 100%;
   margin-top: 18px;
   font-size: 14px;
@@ -317,6 +316,7 @@
   align-items: center;
   justify-content: center;
   gap: 9px;
+  @include primary-button(44px);
 }
 .spinner {
   width: 14px;
@@ -338,7 +338,7 @@
   font-size: 12px;
   cursor: pointer;
 }
-.progress-box { @include progress-box; margin-top: 12px; }
+.progress-box { margin-top: 12px; @include progress-box; }
 .backend-hint {
   margin: 10px 0 0;
   font-size: 11.5px;
@@ -401,7 +401,7 @@
   &:hover { background: #e2e6ff; }
 }
 .audio-fail { margin: 8px 0 0; font-size: 12px; color: $danger; }
-.meta-grid { @include meta-grid(6); margin-top: 16px; }
+.meta-grid { margin-top: 16px; @include meta-grid(6); }
 .result-log {
   margin: 14px 0 0;
   padding: 10px 12px;
