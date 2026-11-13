@@ -27,25 +27,33 @@
         </div>
       </div>
     </nav>
-    <!-- 用 :key 强制重建，清空后让两个视图重新拉取空数据 -->
-    <component :is="active === 'lab' ? VoiceClone : ProfilesPanel" :key="viewKey" />
+    <!-- 用 :key 强制重建，清空后让视图重新拉取空数据 -->
+    <component :is="currentView" :key="viewKey" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import VoiceClone from '@/views/voice-clone/index.vue'
 import ProfilesPanel from '@/views/voice-clone/ProfilesPanel.vue'
+import VoiceChat from '@/views/voice-chat/index.vue'
 import { apiResetData } from '@/api/voice-clone'
 
 const tabs = [
   { key: 'lab', label: '克隆实验室' },
   { key: 'profiles', label: '音色库与播报' },
+  { key: 'chat', label: '语音聊天' },
 ] as const
 const active = ref<string>('lab')
 const viewKey = ref(0)
 const resetting = ref(false)
+
+const currentView = computed(() => {
+  if (active.value === 'chat') return VoiceChat
+  if (active.value === 'profiles') return ProfilesPanel
+  return VoiceClone
+})
 
 function onReset() {
   Modal.confirm({
