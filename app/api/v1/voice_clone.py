@@ -24,14 +24,14 @@ import logging
 import math
 import shutil
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from flask import Blueprint, jsonify, request, send_file
 
 from app.config.protocol import StatusCode
 from app.config.settings import get_settings
 from app.plugin.auth import current_uid, token_required
-from app.util import jobs, long_tts, moss_tts, voice_profiles
+from app.util import db, jobs, long_tts, moss_tts, voice_profiles
 from app.util.inference_slots import SlotCanceled, SlotsBusy
 from app.util.protocol_handler import ProtocolBuilder
 from app.util.rate_limit import rate_limit
@@ -180,6 +180,7 @@ def create_voice_job():
                 return _error(StatusCode.BAD_REQUEST, str(exc))
             ref_meta = _reference_meta(ref_info)
             kind = "clone"
+            job_params = {"kind": "clone", "owner": uid, "text": text}
 
             def runner(job: jobs.Job) -> dict[str, Any]:
                 try:
@@ -209,6 +210,7 @@ def create_voice_job():
                 return _error(StatusCode.NOT_FOUND, "语音档案不存在或已删除")
             opts = _synth_options(data)
             kind = "long_tts" if long_mode else "tts"
+            job_params = {"kind": kind, "owner": uid, "text": text, "profile_id": pid, "opts": opts.__dict__}
 
             def runner(job: jobs.Job) -> dict[str, Any]:
                 jobs.report_progress(job, "准备就绪", 15)
@@ -233,7 +235,7 @@ def create_voice_job():
                 return result
 
         try:
-            job = jobs.create_job(kind, uid, runner)
+            job = jobs.create_job(kind, uid, runner, job_params)
         except jobs.JobsBusy as exc:
             return _error(StatusCode.SERVICE_UNAVAILABLE, str(exc))
         submitted = True
@@ -454,3 +456,73 @@ def voice_clone_tts_segment():
         return _ok(result, "句子合成完成")
     except Exception as exc:
         return _inference_error(exc)
+
+
+@voice_clone_api.route("/reset", methods=["POST"])
+@token_required
+@rate_limit(5, 60)
+def reset_all_data():
+    """一键清空当前用户的数据（声纹档案 + 任务 + 合成产物）。
+
+    单用户模式（auth 关闭）即清空全部。销毁性操作，必须带鉴权；
+    前端会二次确认，后端按当前登录用户归属隔离删除。
+    """
+    uid = current_uid()
+    stats = db.reset_owner_data(uid)
+    jobs.reset_jobs_for_owner(uid)
+    voice_profiles.purge_owner_files(uid)
+    removed_outputs = moss_tts.remove_outputs_by_owner(uid)
+    logger.warning("用户 %s 执行了一键清空数据", uid)
+    return _ok(
+        {
+            "deleted_profiles": stats["profiles"],
+            "deleted_jobs": stats["jobs"],
+            "deleted_outputs": removed_outputs,
+            "message": "已清空当前用户全部声纹档案、任务与合成产物，操作不可恢复",
+        },
+        "数据已清空",
+    )
+
+
+# ── 任务断点恢复：把持久化的 params 重建为可执行 runner ──────────────────────
+def _rebuild_runner(params: dict) -> Callable[[jobs.Job], dict[str, Any]]:
+    kind = params.get("kind")
+    uid = params.get("owner") or "local"
+    text = params.get("text", "")
+    opts = moss_tts.SynthOptions(**(params.get("opts") or {}))
+    if kind in ("tts", "long_tts"):
+        pid = str(params.get("profile_id") or "")
+
+        def _run(job: jobs.Job) -> dict[str, Any]:
+            ref = voice_profiles.get_profile_ref(uid, pid)
+            if ref is None:
+                raise ValueError("语音档案不存在或已删除，无法恢复该任务")
+            jobs.report_progress(job, "准备就绪", 15)
+            if kind == "long_tts":
+                result = long_tts.synthesize_long(
+                    text, ref, opts=opts, owner=uid,
+                    cancel_event=job.cancel_event,
+                    report=lambda stage, percent, detail="": jobs.report_progress(
+                        job, stage, percent, detail
+                    ),
+                )
+            else:
+                result = moss_tts.synthesize(
+                    text, ref, opts, owner=uid,
+                    cancel_event=job.cancel_event,
+                    progress=lambda stage, percent: jobs.report_progress(job, stage, percent),
+                )
+            result["profile_id"] = pid
+            return result
+
+        return _run
+
+    # clone 任务的上传音频已随临时目录清理而丢失，无法恢复
+    def _run_failed(job: jobs.Job) -> dict[str, Any]:
+        raise moss_tts.InferenceError("进程重启，克隆任务的上传参考音频已失效，无法恢复")
+
+    return _run_failed
+
+
+# 进程启动时由本模块注册，jobs.recover_jobs 用它重建未完成任务
+jobs.register_runner_factory(_rebuild_runner)

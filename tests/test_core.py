@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from app.util import inference_slots, long_tts, moss_tts, voice_profiles, wav_tools
+from app.util import db, inference_slots, long_tts, moss_tts, voice_profiles, wav_tools
 from app.util import rate_limit as rl
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -151,15 +151,22 @@ def test_profile_path_traversal_is_blocked(env, wav_bytes):
     ref.write_bytes(wav_bytes())
     item = voice_profiles.save_profile("alice", "正常音色", ref)
 
+    # 即便库中 file 字段被写入非法路径，get_profile_ref 也必须拒绝（FILE_RE 校验）
+    db.upsert_profile({
+        "id": item["id"], "uid": "alice", "name": "x", "file": "../../../etc/passwd",
+        "sample_rate": 48000, "channels": 1, "duration": 1.2, "size": 100, "created_at": 0,
+    })
+    assert voice_profiles.get_profile_ref("alice", item["id"]) is None
+
+    # 合法记录应正常返回
+    db.upsert_profile({
+        "id": item["id"], "uid": "alice", "name": "x", "file": f"{item['id']}.wav",
+        "sample_rate": 48000, "channels": 1, "duration": 1.2, "size": 100, "created_at": 0,
+    })
+    assert voice_profiles.get_profile_ref("alice", item["id"]) is not None
+
     assert voice_profiles.delete_profile("alice", "../../etc/passwd") is False
     assert voice_profiles.get_profile_ref("alice", "../secret") is None
-
-    # 即使 index.json 被篡改，也不能借 file 字段读到目录外的文件
-    index = voice_profiles._index_path("alice")
-    data = json.loads(index.read_text(encoding="utf-8"))
-    data[0]["file"] = "../../../etc/passwd"
-    index.write_text(json.dumps(data), encoding="utf-8")
-    assert voice_profiles.get_profile_ref("alice", item["id"]) is None
 
 
 def test_cli_cancel_terminates_process(env, monkeypatch):

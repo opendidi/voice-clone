@@ -28,7 +28,28 @@
   gap: 16px;
 }
 .tabs-left { display: flex; gap: 4px; }
+.tabs-right { display: flex; align-items: center; gap: 14px; }
 .tabs-tip { font-size: 11px; color: #a3abc0; }
+
+.reset-btn {
+  border: 1px solid #ff7875;
+  background: transparent;
+  color: #d4380d;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  &:hover:not(:disabled) {
+    background: #fff1f0;
+    border-color: #d4380d;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
 
 @include media-sm {
   .tabs-inner { padding: 0 16px; }

@@ -1,15 +1,18 @@
 # -*- coding: UTF-8 -*-
-"""内存任务队列：把秒级~分钟级的推理从同步 HTTP 请求里剥离。
+"""任务队列：把秒级~分钟级的推理从同步 HTTP 请求里剥离。
 
   POST   /jobs       -> 202 + job_id
   GET    /jobs/<id>  -> 状态 / 进度 / 结果
   DELETE /jobs/<id>  -> 取消（协作式，运行中任务跑完后丢弃结果）
 
-任务状态只存在当前进程内存里，重启即失效；需要跨实例共享时替换为
-Redis / 数据库 + 独立 worker，接口契约不用变。
+任务状态同时存在于：
+  * 内存热表 _JOBS —— 运行期低延迟读写、进度回调高频更新；
+  * SQLite 的 jobs 表（app/util/db.py）—— 进程重启后断点恢复 tts / long_tts。
+clone 任务的输入是上传的临时音频，进程崩溃后已丢失，无法恢复，重启时标记为失败。
 """
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -18,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.config.settings import get_settings
+from app.util import db
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +32,14 @@ FAILED = "failed"
 CANCELED = "canceled"
 _TERMINAL = (SUCCEEDED, FAILED, CANCELED)
 
+# 进程启动后由 voice_clone 注册：把持久化的 params 重建为可执行的 runner。
+# 这样 jobs 不直接依赖 voice_clone，避免循环导入。
+_RUNNER_FACTORY: Callable[[dict], Callable[["Job"], dict[str, Any]]] | None = None
 
-class JobsBusy(RuntimeError):
-    """排队任务过多，拒绝新建。"""
+
+def register_runner_factory(fn: Callable[[dict], Callable[["Job"], dict[str, Any]]]) -> None:
+    global _RUNNER_FACTORY
+    _RUNNER_FACTORY = fn
 
 
 @dataclass
@@ -71,11 +80,45 @@ _JOBS: dict[str, Job] = {}
 _LOCK = threading.RLock()
 
 
+def _persist(job: Job, params: dict | None = None) -> None:
+    """把任务落库（失败不影响内存执行，降级为纯内存）。"""
+    try:
+        db.insert_job({
+            "id": job.id,
+            "kind": job.kind,
+            "owner": job.owner,
+            "status": job.status,
+            "stage": job.stage,
+            "percent": job.percent,
+            "detail": job.detail,
+            "error": job.error,
+            "hint": job.hint,
+            "result": job.result,
+            "params": params,
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+        })
+    except Exception:
+        logger.warning("任务落库失败：%s", job.id, exc_info=True)
+
+
+def _persist_update(job: Job) -> None:
+    try:
+        db.update_job(
+            job.id,
+            status=job.status, stage=job.stage, percent=job.percent,
+            detail=job.detail, error=job.error, hint=job.hint, result=job.result,
+        )
+    except Exception:
+        logger.warning("任务状态更新落库失败：%s", job.id, exc_info=True)
+
+
 def _update(job: Job, **changes: Any) -> None:
     with _LOCK:
         for key, value in changes.items():
             setattr(job, key, value)
         job.updated_at = time.time()
+    _persist_update(job)
 
 
 def report_progress(job: Job, stage: str, percent: int, detail: str = "") -> None:
@@ -86,7 +129,7 @@ def report_progress(job: Job, stage: str, percent: int, detail: str = "") -> Non
 
 
 def cleanup_expired() -> int:
-    """回收过期任务，返回清理数量。"""
+    """回收过期任务，返回内存中清理数量（库里的过期记录一并清理）。"""
     ttl = get_settings().job_ttl_seconds
     now = time.time()
     with _LOCK:
@@ -96,6 +139,10 @@ def cleanup_expired() -> int:
         ]
         for key in expired:
             _JOBS.pop(key, None)
+    try:
+        db.cleanup_jobs(ttl, now)
+    except Exception:
+        logger.warning("清理过期任务落库失败", exc_info=True)
     return len(expired)
 
 
@@ -138,7 +185,13 @@ def _execute(job: Job) -> None:
             _update(job, status=SUCCEEDED, stage="完成", percent=100, result=result)
 
 
-def create_job(kind: str, owner: str, runner: Callable[[Job], dict[str, Any]]) -> Job:
+def create_job(
+    kind: str,
+    owner: str,
+    runner: Callable[[Job], dict[str, Any]],
+    params: dict | None = None,
+) -> Job:
+    """创建任务并落库；params 为可序列化的重建参数，供重启后断点恢复。"""
     cfg = get_settings()
     with _LOCK:
         cleanup_expired()
@@ -148,6 +201,7 @@ def create_job(kind: str, owner: str, runner: Callable[[Job], dict[str, Any]]) -
             raise JobsBusy("排队任务过多，请等待现有任务结束再提交")
         job = Job(id=uuid.uuid4().hex[:16], kind=kind, owner=owner, runner=runner)
         _JOBS[job.id] = job
+    _persist(job, params)
     threading.Thread(
         target=_execute, args=(job,), daemon=True, name=f"vc-job-{job.id[:8]}"
     ).start()
@@ -172,7 +226,75 @@ def cancel_job(job_id: str, owner: str | None = None) -> Job | None:
     return job
 
 
+def recover_jobs() -> int:
+    """进程启动时调用：重放未完成任务。
+
+    tts / long_tts 的输入来自已存声纹（进程重启后仍在），可重建 runner 重新执行；
+    clone 的上传音频已随临时目录清理而丢失，无法恢复，标记为失败。
+    返回成功恢复（重新入队）的任务数。
+    """
+    try:
+        rows = db.get_active_jobs()
+    except Exception:
+        logger.warning("读取未完成任务失败，跳过恢复", exc_info=True)
+        return 0
+    recovered = 0
+    for row in rows:
+        kind = row["kind"]
+        params_json = row["params_json"]
+        params = json.loads(params_json) if params_json else None
+        if _RUNNER_FACTORY is None or kind not in ("tts", "long_tts") or not params:
+            try:
+                db.update_job(
+                    row["id"], status=FAILED, stage="进程重启后已失效",
+                    error="服务重启，该任务的输入或运行环境已丢失",
+                )
+            except Exception:
+                pass
+            continue
+        try:
+            runner = _RUNNER_FACTORY(params)
+        except Exception as exc:
+            try:
+                db.update_job(row["id"], status=FAILED, stage="恢复失败", error=str(exc))
+            except Exception:
+                pass
+            continue
+        job = Job(
+            id=row["id"], kind=kind, owner=row["owner"], runner=runner,
+            status=QUEUED, stage="重启后恢复", percent=0,
+        )
+        with _LOCK:
+            _JOBS[job.id] = job
+        threading.Thread(
+            target=_execute, args=(job,), daemon=True, name=f"vc-rec-{job.id[:8]}"
+        ).start()
+        recovered += 1
+    if recovered:
+        logger.info("已恢复 %d 个未完成的推理任务", recovered)
+    return recovered
+
+
 def reset_jobs() -> None:
-    """测试用：清空任务表。"""
+    """测试用：清空任务表（内存 + 库）。"""
     with _LOCK:
         _JOBS.clear()
+    try:
+        db.reset_jobs_table()
+    except Exception:
+        logger.warning("清空任务库失败", exc_info=True)
+
+
+def reset_jobs_for_owner(uid: str) -> None:
+    """清空某用户的内存任务 + 库中任务（供一键清空数据使用）。"""
+    with _LOCK:
+        for jid in [k for k, v in _JOBS.items() if v.owner == uid]:
+            _JOBS.pop(jid, None)
+    try:
+        db.delete_jobs_by_owner(uid)
+    except Exception:
+        logger.warning("清空用户任务库失败：%s", uid, exc_info=True)
+
+
+class JobsBusy(RuntimeError):
+    """排队任务过多，拒绝新建。"""

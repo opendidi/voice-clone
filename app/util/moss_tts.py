@@ -892,3 +892,24 @@ def get_output_meta(file_id: str, owner: str | None = None) -> dict[str, Any]:
     meta = _read_meta(file_id)
     meta.pop("owner", None)
     return meta
+
+
+def remove_outputs_by_owner(owner: str) -> int:
+    """删除某 owner 的全部合成产物（wav + 元数据 json），返回删除数量。
+
+    供一键清空数据使用：auth 关闭时所有产物 owner 都是 'local'，即清空全部。
+    """
+    out = output_dir()
+    if not out.is_dir():
+        return 0
+    removed = 0
+    for json_path in list(out.glob("*.json")):
+        try:
+            meta = json.loads(json_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if meta.get("owner") != owner:
+            continue
+        _unlink_pair(out / f"{json_path.stem}.wav")
+        removed += 1
+    return removed

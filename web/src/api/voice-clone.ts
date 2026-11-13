@@ -32,6 +32,7 @@ const API = {
   jobs: '/voice-clone/jobs',
   audio: '/voice-clone/audio',
   profiles: '/voice-clone/profiles',
+  reset: '/voice-clone/reset',
   ttsSegment: '/voice-clone/tts/segment',
 } as const
 
@@ -245,6 +246,23 @@ export async function apiDeleteVoiceProfile(id: string): Promise<void> {
   await http.delete<Envelope<{ ok: boolean }>>(`${API.profiles}/${id}`, {
     baseURL: BASE, headers: buildHeaders(),
   })
+}
+
+export interface ResetDataResult {
+  deleted_profiles: number
+  deleted_jobs: number
+  deleted_outputs: number
+  message: string
+}
+
+/**
+ * 一键清空当前用户的数据（声纹档案 + 任务 + 合成产物）。
+ * 销毁性操作，后端按当前登录用户归属隔离删除；前端会二次确认。
+ */
+export async function apiResetData(): Promise<ResetDataResult> {
+  return unwrap(await http.post<Envelope<ResetDataResult>>(API.reset, {
+    baseURL: BASE, headers: buildHeaders(true),
+  }))
 }
 
 /**

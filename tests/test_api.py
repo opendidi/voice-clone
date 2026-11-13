@@ -203,3 +203,36 @@ def test_delete_audio_and_preview_profile(client, wav_bytes):
 def test_health_does_not_leak_local_paths(client):
     body = client.get("/health").get_json()
     assert body["ok"] and "data_dir" not in body
+
+
+def test_reset_clears_owner_data(client, wav_bytes):
+    """一键清空：删除当前用户声纹档案、任务与合成产物，且不可恢复。"""
+    saved = client.post(
+        "/v1/voice-clone/profiles",
+        data={"name": "待清空音色", "audio": (io.BytesIO(wav_bytes()), "ref.wav")},
+        content_type="multipart/form-data",
+    )
+    assert saved.status_code == 200
+    pid = saved.get_json()["data"]["profile"]["id"]
+
+    created = upload(client, wav_bytes)
+    final = wait_job(client, created.get_json()["data"]["id"])
+    assert final["status"] == "succeeded"
+    fid = final["result"]["id"]
+    assert client.get(f"/v1/voice-clone/audio/{fid}").status_code == 200
+
+    # 重置前确认有数据
+    assert len(client.get("/v1/voice-clone/profiles").get_json()["data"]["profiles"]) == 1
+
+    reset = client.post("/v1/voice-clone/reset")
+    assert reset.status_code == 200
+    payload = reset.get_json()["data"]
+    assert payload["deleted_profiles"] == 1
+    assert payload["deleted_jobs"] >= 1
+    assert payload["deleted_outputs"] >= 1
+
+    # 重置后数据应全部清空（且合成产物不可再访问）
+    assert client.get("/v1/voice-clone/profiles").get_json()["data"]["profiles"] == []
+    assert client.get(f"/v1/voice-clone/profiles/{pid}/audio").status_code == 404
+    assert client.get(f"/v1/voice-clone/audio/{fid}").status_code == 404
+

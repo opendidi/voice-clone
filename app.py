@@ -22,6 +22,7 @@ load_dotenv()  # 必须早于 create_v1 / 引擎模块的 import
 from app.api.v1 import create_v1  # noqa: E402
 from app.config.protocol import StatusCode  # noqa: E402
 from app.util.protocol_handler import ProtocolBuilder  # noqa: E402
+from app.util import db, jobs  # noqa: E402
 
 logging.basicConfig(
     level=getattr(logging, get_settings().log_level, logging.INFO),
@@ -32,6 +33,22 @@ logger = logging.getLogger("voice-clone")
 app = Flask(__name__, static_folder=None)  # 声纹/产物目录绝不作为静态资源暴露
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 参考音频上限 20MB + 余量
 app.register_blueprint(create_v1(), url_prefix="/v1")
+
+# 启动即把结构化数据落到 SQLite，并恢复上次未完成的任务。
+# create_v1 导入时已注册 runner 工厂，recover_jobs 可据此重建 tts / long_tts 任务。
+db.init_db()
+try:
+    migrated = db.migrate_legacy_profiles()
+    if migrated:
+        logger.info("迁移 %d 条遗留声纹索引到 SQLite", migrated)
+except Exception:
+    logger.warning("迁移遗留声纹索引失败", exc_info=True)
+try:
+    recovered = jobs.recover_jobs()
+    if recovered:
+        logger.info("恢复了 %d 个未完成的推理任务", recovered)
+except Exception:
+    logger.warning("恢复未完成任务失败", exc_info=True)
 
 
 @app.before_request
