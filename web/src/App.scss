@@ -29,7 +29,13 @@
 }
 .tabs-left { display: flex; gap: 4px; }
 .tabs-right { display: flex; align-items: center; gap: 14px; }
-.tabs-tip { font-size: 11px; color: #a3abc0; }
+.tabs-tip {
+  font-size: 11px;
+  color: #a3abc0;
+  white-space: normal;
+  max-width: 320px;
+  line-height: 1.4;
+}
 
 .reset-btn {
   border: 1px solid #ff7875;

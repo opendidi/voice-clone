@@ -43,18 +43,20 @@
 .profile-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
 
-  label { font-size: 13px; color: $text-2; }
+  label { font-size: 13px; color: $text-2; flex: none; }
   select {
-    flex: 1;
+    flex: 1 1 200px;
+    max-width: 260px;
     height: 36px;
     border: 1px solid $line;
     border-radius: 8px;
     padding: 0 10px;
     background: #fff;
     font-size: 13px;
+    &:focus { border-color: $brand; outline: none; }
   }
 }
 
@@ -167,47 +169,73 @@
   margin-top: 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .bubble {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  max-width: 92%;
   .who {
     flex: none;
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     display: grid;
     place-items: center;
     font-size: 12px;
+    font-weight: 600;
     color: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
   p {
     margin: 0;
-    padding: 10px 14px;
-    border-radius: 10px;
+    padding: 11px 15px;
+    border-radius: 12px;
     font-size: 14px;
-    line-height: 1.6;
-    max-width: 560px;
+    line-height: 1.65;
     word-break: break-word;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   }
 }
 
-.bubble.user .who { background: $brand; }
-.bubble.user p { background: #f0f5ff; color: $text; }
-.bubble.bot .who { background: #52c41a; }
-.bubble.bot p { background: #f6ffed; color: $text; }
+.bubble.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+  .who { background: $brand; }
+  p {
+    background: #eef3ff;
+    color: $text;
+    border: 1px solid #d6e0ff;
+    border-top-right-radius: 4px;
+  }
+}
+
+.bubble.bot {
+  align-self: flex-start;
+  .who { background: #52c41a; }
+  p {
+    background: #eaf7e6;
+    color: #1f3d12;
+    border: 1px solid #b7eb8f;
+    border-top-left-radius: 4px;
+  }
+}
 
 .play-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
+  margin-top: 2px;
 }
 
-.audio-player { height: 40px; }
+.audio-player {
+  flex: 1 1 240px;
+  min-width: 220px;
+  height: 40px;
+}
 
 .download-btn {
   font-size: 13px;
@@ -227,4 +255,23 @@
   border-radius: 8px;
   padding: 8px 12px;
   margin: 4px 0 0;
+}
+
+.tips {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px dashed $line;
+  font-size: 12.5px;
+  color: $text-3;
+  line-height: 1.75;
+
+  h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: $text-2;
+  }
+  ol { margin: 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  strong { color: $text-2; }
 }

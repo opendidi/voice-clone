@@ -15,7 +15,7 @@
           </button>
         </div>
         <div class="tabs-right">
-          <span class="tabs-tip">启用 API Key 时须在 localStorage 写入 auth-token</span>
+          <span class="tabs-tip">需鉴权时请在 localStorage 写入 auth-token</span>
           <button
             class="reset-btn"
             :disabled="resetting"

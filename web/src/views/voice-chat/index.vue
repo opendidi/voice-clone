@@ -70,6 +70,15 @@
         </div>
         <p v-if="result.audio.demo" class="warn-line">演示模式：回复音频是固定提示音，配置真实模型后即为你的音色。</p>
       </div>
+
+      <div class="tips">
+        <h4>使用小贴士</h4>
+        <ol>
+          <li>先在「音色库与播报」保存一个语音档案，再回到这里选为「回复音色」。</li>
+          <li>点击录音说一句话，再次点击即发送；AI 会听写、思考并用你的音色合成回复。</li>
+          <li>当前为<strong>演示模式</strong>（固定提示音）。配置真实模型（SenseVoice + Qwen2-0.5B）后即可用你的音色，详见 README。</li>
+        </ol>
+      </div>
     </section>
   </div>
 </template>
