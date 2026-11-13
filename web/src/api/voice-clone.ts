@@ -11,7 +11,7 @@ import { unwrap, type Envelope } from '@/utils/envelope'
 
 export type { Envelope } from '@/utils/envelope'
 
-function resolveBase(): string {
+export function resolveBase(): string {
   const configured = String(import.meta.env.VITE_GLOB_API_URL || '').replace(/\/$/, '')
   if (!import.meta.env.DEV) return configured
   try {

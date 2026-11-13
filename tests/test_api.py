@@ -205,6 +205,53 @@ def test_health_does_not_leak_local_paths(client):
     assert body["ok"] and "data_dir" not in body
 
 
+def _wait_voice_chat(client, job_id: str, timeout: float = 15) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        body = client.get(f"/v1/voice-chat/turn/{job_id}").get_json()["data"]
+        if body["status"] in ("succeeded", "failed", "canceled"):
+            return body
+        time.sleep(0.05)
+    raise AssertionError(f"语音聊天任务 {job_id} 未在 {timeout}s 内结束")
+
+
+def test_voice_chat_turn_pipeline(client, wav_bytes):
+    """语音聊天一回合：ASR(mock) -> LLM(mock) -> TTS(mock) 全链路跑通。"""
+    saved = client.post(
+        "/v1/voice-clone/profiles",
+        data={"name": "聊天音色", "audio": (io.BytesIO(wav_bytes()), "ref.wav")},
+        content_type="multipart/form-data",
+    )
+    pid = saved.get_json()["data"]["profile"]["id"]
+
+    resp = client.post(
+        "/v1/voice-chat/turn",
+        data={"audio": (io.BytesIO(wav_bytes()), "input.wav"), "profile_id": pid},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 202
+    job_id = resp.get_json()["data"]["id"]
+
+    final = _wait_voice_chat(client, job_id)
+    assert final["status"] == "succeeded", final.get("error")
+    result = final["result"]
+    assert result["transcript"] and result["reply"]
+    assert result["audio"]["id"] and result["audio"]["url"]
+    # 未安装真实模型时，ASR/LLM/TTS 都应落在 mock 后端
+    assert result["backends"]["asr"] == "mock"
+    assert result["backends"]["llm"] == "mock"
+
+    # 合成产物可被本人播放、被他人拒绝（复用 owner 隔离）
+    fid = result["audio"]["id"]
+    assert client.get(f"/v1/voice-clone/audio/{fid}").status_code == 200
+
+
+def test_voice_chat_status_probe(client):
+    body = client.get("/v1/voice-chat/status").get_json()["data"]
+    assert "asr" in body and "llm" in body and "tts" in body
+    assert body["asr"]["model"] and body["llm"]["model"]
+
+
 def test_reset_clears_owner_data(client, wav_bytes):
     """一键清空：删除当前用户声纹档案、任务与合成产物，且不可恢复。"""
     saved = client.post(

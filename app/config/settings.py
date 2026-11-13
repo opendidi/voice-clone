@@ -75,6 +75,16 @@ def _api_users() -> dict[str, str]:
     return users
 
 
+def _resolve_voice_chat_default_ref() -> Path:
+    """语音聊天默认参考音色（可选）。未配置或文件不存在时返回空路径，
+    此时语音聊天必须让用户先选/存一个音色。mock 模式下合成提示音不需要真实声纹。
+    """
+    raw = os.environ.get("VOICE_CHAT_DEFAULT_REF", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return PROJECT_ROOT / "assets" / "default_ref.wav"
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -95,6 +105,9 @@ class Settings:
     long_tts_max_chars: int
     bridge_token: str
     log_level: str
+    voice_chat_asr_backend: str
+    voice_chat_llm_backend: str
+    voice_chat_default_ref: Path
 
     @property
     def auth_enabled(self) -> bool:
@@ -135,4 +148,7 @@ def get_settings() -> Settings:
         long_tts_max_chars=_int("VOICE_CLONE_LONG_TTS_MAX_CHARS", 5000, 200, 50000),
         bridge_token=os.environ.get("MOSS_BRIDGE_TOKEN", "").strip(),
         log_level=os.environ.get("VOICE_CLONE_LOG_LEVEL", "INFO").strip().upper(),
+        voice_chat_asr_backend=os.environ.get("VOICE_CHAT_ASR_BACKEND", "auto").strip().lower() or "auto",
+        voice_chat_llm_backend=os.environ.get("VOICE_CHAT_LLM_BACKEND", "auto").strip().lower() or "auto",
+        voice_chat_default_ref=_resolve_voice_chat_default_ref(),
     )
