@@ -107,7 +107,8 @@ def _persist_update(job: Job) -> None:
         db.update_job(
             job.id,
             status=job.status, stage=job.stage, percent=job.percent,
-            detail=job.detail, error=job.error, hint=job.hint, result=job.result,
+            detail=job.detail, error=job.error, hint=job.hint,
+            result_json=job.result,
         )
     except Exception:
         logger.warning("任务状态更新落库失败：%s", job.id, exc_info=True)

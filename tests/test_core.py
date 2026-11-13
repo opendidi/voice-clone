@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from app.util import db, inference_slots, long_tts, moss_tts, voice_profiles, wav_tools
+from app.util import db, inference_slots, jobs, long_tts, moss_tts, voice_profiles, wav_tools
 from app.util import rate_limit as rl
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -222,3 +223,31 @@ def test_probe_setup_commands_use_absolute_requirements(env):
     joined = "\n".join(status["setup_commands"])
     assert str(PROJECT_ROOT / "requirements-moss-tts.txt") in joined
     assert "-m pip install -r" in joined
+
+
+def test_job_result_persists_to_db(env):
+    """回归：任务成功后的 result 必须落库到 result_json 列。
+
+    曾因调用 update_job 时误用字段名 result（列名实为 result_json），
+    导致每次进度更新都抛 no such column: result，结果永远写不进库。
+    """
+    payload = {"id": "out-123", "text": "你好", "url": "/v1/voice-clone/audio/out-123"}
+    job = jobs.create_job("tts", "alice", lambda j: payload)
+
+    # 等待后台线程跑完（trivial runner，瞬时就绪）
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        row = db.get_job(job.id)
+        if row and row["status"] == jobs.SUCCEEDED:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("job 未在超时内成功")
+
+    row = db.get_job(job.id)
+    assert row["status"] == jobs.SUCCEEDED
+    assert row["result_json"] is not None
+    assert json.loads(row["result_json"]) == payload
+    # 进度/状态等列也应已落库
+    assert row["stage"] == "完成" and row["percent"] == 100
+
