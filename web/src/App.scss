@@ -1,0 +1,57 @@
+@use "./styles/variables" as *;
+@use "./styles/mixins" as *;
+
+.app-shell { min-height: 100vh; background: $page; }
+.app-tabs {
+  background: $surface;
+  border-bottom: 1px solid $line;
+
+  button {
+    border: none;
+    background: transparent;
+    padding: 13px 16px;
+    font-size: 13px;
+    color: $text-3;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    &:hover { color: $brand; }
+    &.active { color: $brand; border-bottom-color: $brand-2; font-weight: 600; }
+  }
+}
+.tabs-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.tabs-left { display: flex; gap: 4px; }
+.tabs-right { display: flex; align-items: center; gap: 14px; }
+.tabs-tip { font-size: 11px; color: #a3abc0; }
+
+.reset-btn {
+  border: 1px solid #ff7875;
+  background: transparent;
+  color: #d4380d;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  &:hover:not(:disabled) {
+    background: #fff1f0;
+    border-color: #d4380d;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@include media-sm {
+  .tabs-inner { padding: 0 16px; }
+  .tabs-tip { display: none; }
+}

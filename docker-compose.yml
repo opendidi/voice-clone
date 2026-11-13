@@ -1,0 +1,57 @@
+services:
+  bridge:
+    build: .
+    command: ["python", "scripts/moss_tts_bridge.py", "--host", "0.0.0.0", "--port", "18090"]
+    volumes:
+      # 728MB ONNX 权重不放进镜像，直接挂载宿主机目录
+      - ./third_party/MOSS-TTS-Nano:/app/third_party/MOSS-TTS-Nano:ro
+    environment:
+      MOSS_BRIDGE_TOKEN: ${MOSS_BRIDGE_TOKEN:-}
+      MOSS_BRIDGE_QUEUE_WAIT: ${MOSS_BRIDGE_QUEUE_WAIT:-120}
+    ports:
+      - "127.0.0.1:18090:18090"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18090/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 300s
+    restart: unless-stopped
+
+  api:
+    build: .
+    depends_on:
+      bridge:
+        condition: service_healthy
+    volumes:
+      - ./third_party/MOSS-TTS-Nano:/app/third_party/MOSS-TTS-Nano:ro
+      - ./var:/app/var
+    environment:
+      HOST: 0.0.0.0
+      PORT: "5002"
+      MOSS_TTS_BACKEND: http
+      MOSS_TTS_SERVICE_URL: http://bridge:18090
+      MOSS_BRIDGE_TOKEN: ${MOSS_BRIDGE_TOKEN:-}
+      VOICE_CLONE_DATA_DIR: /app/var
+      VOICE_CLONE_API_KEY: ${VOICE_CLONE_API_KEY:-}
+      VOICE_CLONE_USERS: ${VOICE_CLONE_USERS:-}
+      VOICE_CLONE_CORS_ORIGINS: ${VOICE_CLONE_CORS_ORIGINS:-http://localhost:8080}
+      VOICE_CLONE_MAX_INFERENCE: ${VOICE_CLONE_MAX_INFERENCE:-2}
+    ports:
+      - "127.0.0.1:5002:5002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped

@@ -1,0 +1,13 @@
+.git
+.github
+.venv-moss
+third_party
+var
+web
+tests
+deploy
+.env
+README.md
+**/__pycache__
+*.py[cod]
+.pytest_cache

@@ -1,0 +1,23 @@
+# 大文件与本地数据（不进版本库）
+.venv-moss/
+third_party/
+.env
+var/*
+!var/.gitkeep
+app/static/voice-clone/*
+app/static/voice-profiles/*
+!app/static/voice-clone/.gitkeep
+!app/static/voice-profiles/.gitkeep
+
+# 本地工作区数据（不进版本库）
+.workbuddy/
+
+# Python / Node
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+web/node_modules/
+web/dist/
+.DS_Store

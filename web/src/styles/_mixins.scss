@@ -1,0 +1,141 @@
+// 共享 mixin：收敛三个页面里重复的卡片 / 按钮 / 输入 / 反馈样式
+@use "variables" as *;
+
+@mixin card {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  padding: 20px;
+  box-shadow: $shadow-card;
+}
+
+@mixin soft-button {
+  padding: 8px 13px;
+  border-radius: $radius-xs;
+  border: 1px solid #d9dfee;
+  background: $surface;
+  color: $text-2;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: $brand-2;
+    color: $brand;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@mixin primary-button($height: 44px) {
+  height: $height;
+  border: none;
+  border-radius: $radius;
+  background: $gradient-brand;
+  color: $white;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.06);
+    box-shadow: 0 6px 16px rgba(76, 92, 214, 0.22);
+  }
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+@mixin text-area($min-height: 108px) {
+  width: 100%;
+  min-height: $min-height;
+  resize: vertical;
+  padding: 12px 14px;
+  border: 1px solid $input-line;
+  border-radius: $radius;
+  color: $text;
+  box-sizing: border-box;
+  outline: none;
+  font-family: inherit;
+
+  &:focus {
+    border-color: $brand-2;
+    box-shadow: 0 0 0 3px rgba(92, 111, 240, 0.1);
+  }
+}
+
+@mixin progress-box {
+  padding: 11px 13px;
+  border-radius: $radius-sm;
+  background: $panel-2;
+  border: 1px solid #e8ecfa;
+
+  .progress-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: $text-2;
+    margin-bottom: 8px;
+  }
+  .progress-track {
+    height: 6px;
+    border-radius: 999px;
+    background: #e6eaf7;
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      background: $brand-2;
+      transition: width 0.3s;
+    }
+  }
+}
+
+@mixin error-box {
+  padding: 12px 14px;
+  border-radius: $radius-sm;
+  background: $danger-bg;
+  border: 1px solid $danger-line;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: $danger;
+}
+
+@mixin meta-grid($columns: 6) {
+  display: grid;
+  grid-template-columns: repeat($columns, minmax(0, 1fr));
+  gap: 10px;
+
+  > div {
+    background: $panel;
+    border-radius: $radius-sm;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  span {
+    font-size: 11px;
+    color: $muted;
+  }
+  strong {
+    font-size: 13px;
+    color: #38425e;
+    font-weight: 600;
+  }
+}
+
+@mixin media-md {
+  @media (max-width: $bp-md) {
+    @content;
+  }
+}
+
+@mixin media-sm {
+  @media (max-width: $bp-sm) {
+    @content;
+  }
+}

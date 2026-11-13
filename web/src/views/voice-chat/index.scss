@@ -1,0 +1,230 @@
+@use "../../styles/variables" as *;
+@use "../../styles/mixins" as *;
+
+.vc-shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.card {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 22px 24px;
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  p { font-size: 13px; color: $text-3; margin: 0; }
+}
+
+.cap-tip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+  white-space: nowrap;
+  &.ready {
+    background: #f6ffed;
+    color: #389e0d;
+    border-color: #b7eb8f;
+  }
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+
+  label { font-size: 13px; color: $text-2; }
+  select {
+    flex: 1;
+    height: 36px;
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: #fff;
+    font-size: 13px;
+  }
+}
+
+.hint {
+  font-size: 12px;
+  color: $text-3;
+  margin: 6px 0 0;
+  &.danger { color: #d4380d; }
+}
+
+.record-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.rec-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid $brand;
+  background: #fff;
+  color: $brand;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:hover:not(:disabled) { background: rgba(64, 110, 255, 0.06); }
+  &.active {
+    background: #fff1f0;
+    border-color: #ff4d4f;
+    color: #d4380d;
+  }
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #bfbfbf;
+}
+.rec-btn.active .rec-dot {
+  background: #ff4d4f;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.meter {
+  width: 220px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f0f0f0;
+  overflow: hidden;
+  i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #52c41a, #faad14, #ff4d4f);
+    transition: width 0.08s linear;
+  }
+}
+
+.progress-box {
+  margin: 14px 0;
+  .progress-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: $text-2;
+    margin-bottom: 6px;
+  }
+  .progress-track {
+    height: 6px;
+    border-radius: 999px;
+    background: #f0f0f0;
+    overflow: hidden;
+    i {
+      display: block;
+      height: 100%;
+      background: $brand;
+      transition: width 0.3s ease;
+    }
+  }
+}
+
+.error-box {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+  color: #cf1322;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  strong { font-size: 13px; }
+  .error-hint { color: #d4380d; opacity: 0.85; }
+}
+
+.chat-box {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bubble {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  .who {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: #fff;
+  }
+  p {
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 560px;
+    word-break: break-word;
+  }
+}
+
+.bubble.user .who { background: $brand; }
+.bubble.user p { background: #f0f5ff; color: $text; }
+.bubble.bot .who { background: #52c41a; }
+.bubble.bot p { background: #f6ffed; color: $text; }
+
+.play-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.audio-player { height: 40px; }
+
+.download-btn {
+  font-size: 13px;
+  color: $brand;
+  text-decoration: none;
+  border: 1px solid $brand;
+  padding: 6px 12px;
+  border-radius: 8px;
+  &:hover { background: rgba(64, 110, 255, 0.06); }
+}
+
+.warn-line {
+  font-size: 12px;
+  color: #d46b08;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 4px 0 0;
+}
