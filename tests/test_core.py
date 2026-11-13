@@ -2,10 +2,17 @@
 """核心纯逻辑单测：WAV 校验 / 拼接 / 分句 / 档案 / 归属 / 闸门 / 限流 / 探测缓存。"""
 from __future__ import annotations
 
+import json
+import sys
+import threading
+from pathlib import Path
+
 import pytest
 
 from app.util import inference_slots, long_tts, moss_tts, voice_profiles, wav_tools
 from app.util import rate_limit as rl
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_validate_reference_audio(env, wav_bytes, monkeypatch):
@@ -131,3 +138,80 @@ def test_settings_users_and_cors(env, monkeypatch):
     assert cfg.auth_enabled and cfg.api_users == {"k1": "alice", "k2": "bob"}
     assert cfg.cors_origins == ["https://a.example", "https://b.example"]
     assert not cfg.allow_backend_override
+
+
+def test_profile_path_traversal_is_blocked(env, wav_bytes):
+    root = voice_profiles.profiles_root().resolve()
+    for uid in ("..", ".", "a..b", "../../etc", "/tmp/evil"):
+        target = voice_profiles._user_dir(uid)
+        assert target == root or root in target.parents
+        assert ".." not in target.name
+
+    ref = env / "ref.wav"
+    ref.write_bytes(wav_bytes())
+    item = voice_profiles.save_profile("alice", "正常音色", ref)
+
+    assert voice_profiles.delete_profile("alice", "../../etc/passwd") is False
+    assert voice_profiles.get_profile_ref("alice", "../secret") is None
+
+    # 即使 index.json 被篡改，也不能借 file 字段读到目录外的文件
+    index = voice_profiles._index_path("alice")
+    data = json.loads(index.read_text(encoding="utf-8"))
+    data[0]["file"] = "../../../etc/passwd"
+    index.write_text(json.dumps(data), encoding="utf-8")
+    assert voice_profiles.get_profile_ref("alice", item["id"]) is None
+
+
+def test_cli_cancel_terminates_process(env, monkeypatch):
+    """CLI 后端必须能响应取消并终止子进程，同时强制 UTF-8 读取中文 prompt。"""
+    (env / "infer_onnx.py").write_text("# fake\n", encoding="utf-8")
+    work = env / "work"
+    work.mkdir()
+    ref = env / "ref.wav"
+    ref.write_bytes(b"RIFF")
+    out = work / "out.wav"
+
+    class FakeProc:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+            self.terminated = False
+            self.returncode = 1
+            self.pid = 4242
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            self.terminated = True
+
+    created = []
+
+    def fake_popen(*args, **kwargs):
+        proc = FakeProc(*args, **kwargs)
+        created.append(proc)
+        return proc
+
+    monkeypatch.setattr(moss_tts.subprocess, "Popen", fake_popen)
+    cfg = moss_tts.MossConfig(repo_dir=env, python_bin=sys.executable, timeout=30)
+    cancel = threading.Event()
+    threading.Timer(0.15, cancel.set).start()
+
+    with pytest.raises(moss_tts.InferenceError, match="取消"):
+        moss_tts._synthesize_cli(
+            cfg, moss_tts.SynthOptions(), "你好", ref, out, work, cancel
+        )
+    assert created and created[0].terminated
+    assert created[0].kwargs["env"]["PYTHONUTF8"] == "1"
+
+
+def test_probe_setup_commands_use_absolute_requirements(env):
+    status = moss_tts.probe(force=True)
+    joined = "\n".join(status["setup_commands"])
+    assert str(PROJECT_ROOT / "requirements-moss-tts.txt") in joined
+    assert "-m pip install -r" in joined

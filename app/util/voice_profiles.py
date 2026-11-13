@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -26,6 +27,9 @@ from app.util import moss_tts
 logger = logging.getLogger(__name__)
 
 MAX_NAME_LEN = 40
+# 档案 id 与文件名都严格限定为 12 位小写 hex + .wav，杜绝 URL / index.json 带来的路径穿越
+_PID_RE = re.compile(r"^[0-9a-f]{12}$")
+_FILE_RE = re.compile(r"^[0-9a-f]{12}\.wav$")
 
 # index.json 的读改写全程持锁：保存 / 删除并发时不会互相覆盖丢档案。
 _INDEX_LOCK = threading.RLock()
@@ -36,11 +40,20 @@ def profiles_root() -> Path:
 
 
 def _user_dir(uid: str) -> Path:
-    """用户目录：uid 做一层安全清洗，避免路径穿越。"""
-    safe = "".join(c for c in (uid or "") if c.isalnum() or c in "-_@.")
-    d = profiles_root() / (safe or "unknown")
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """用户目录：清洗 uid 并校验解析后的路径仍落在 profiles_root 内。
+
+    仅做字符过滤不够：`..`、`.`、`a..b` 里的点都是允许字符，会把目录拼到
+    数据目录之外。这里额外去掉首尾点、拒绝连续点，并用 resolve() 复核。
+    """
+    root = profiles_root().resolve()
+    safe = "".join(c for c in (uid or "") if c.isalnum() or c in "-_@.").strip(".")
+    if not safe or ".." in safe:
+        safe = "unknown"
+    target = (root / safe).resolve()
+    if target != root and root not in target.parents:
+        target = root / "unknown"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
 
 
 def _index_path(uid: str) -> Path:
@@ -97,7 +110,13 @@ def list_profiles(uid: str) -> list[dict]:
     return sorted(_read_index(uid), key=lambda x: x.get("created_at", 0), reverse=True)
 
 
+def _valid_pid(pid: str) -> bool:
+    return bool(_PID_RE.fullmatch(pid or ""))
+
+
 def get_profile(uid: str, pid: str) -> dict | None:
+    if not _valid_pid(pid):
+        return None
     for it in _read_index(uid):
         if it.get("id") == pid:
             return it
@@ -108,11 +127,20 @@ def get_profile_ref(uid: str, pid: str) -> Path | None:
     it = get_profile(uid, pid)
     if not it:
         return None
-    p = _user_dir(uid) / it["file"]
+    filename = str(it.get("file") or "")
+    if not _FILE_RE.fullmatch(filename):
+        logger.warning("跳过非法档案文件名：%s", filename)
+        return None
+    udir = _user_dir(uid).resolve()
+    p = (udir / filename).resolve()
+    if udir not in p.parents:
+        return None
     return p if p.is_file() else None
 
 
 def delete_profile(uid: str, pid: str) -> bool:
+    if not _valid_pid(pid):
+        return False
     with _INDEX_LOCK:
         before = _read_index(uid)
         items = [it for it in before if it.get("id") != pid]

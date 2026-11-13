@@ -280,6 +280,12 @@
               下载 WAV
             </a>
           </div>
+          <p class="submit-tip result-delete">
+            <button class="text-btn danger" :disabled="deletingAudio" @click="deleteCurrentAudio">
+              {{ deletingAudio ? '删除中…' : '删除此音频' }}
+            </button>
+            <span>连同服务端 WAV 与元数据（含合成文本）一起清除</span>
+          </p>
           <p v-if="audioSource.failed.value" class="audio-fail">{{ audioSource.failed.value }}</p>
           <div class="meta-grid">
             <div><span>推理耗时</span><strong>{{ (current.elapsed_ms / 1000).toFixed(2) }} s</strong></div>
@@ -322,6 +328,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   apiCreateCloneJob,
+  apiDeleteGeneratedAudio,
   apiSaveVoiceProfile,
   apiVoiceCloneStatus,
   type CloneResult,
@@ -576,6 +583,26 @@ function stopRecord() {
 function selectHistory(item: CloneResult) {
   current.value = item
   void audioSource.load(item.id)
+}
+
+const deletingAudio = ref(false)
+
+async function deleteCurrentAudio() {
+  const item = current.value
+  if (!item || deletingAudio.value) return
+  deletingAudio.value = true
+  try {
+    await apiDeleteGeneratedAudio(item.id)
+    audioSource.revoke()
+    current.value = null
+    history.value = history.value.filter((entry) => entry.id !== item.id)
+    saveHistory()
+    message.success('音频与元数据已删除')
+  } catch (e) {
+    message.error(pickError(e))
+  } finally {
+    deletingAudio.value = false
+  }
 }
 
 function run() {

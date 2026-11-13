@@ -160,3 +160,46 @@ def test_wsgi_entrypoint_exports_flask_app(env):
     spec.loader.exec_module(mod)
     assert hasattr(mod.app, "test_client")
     assert callable(mod.start_maintenance)
+
+
+def test_framework_errors_are_envelopes(flask_app, client, wav_bytes):
+    r404 = client.get("/v1/voice-clone/not-a-route")
+    assert r404.status_code == 404 and r404.get_json()["code"] == 404
+    r405 = client.post("/v1/voice-clone/status")
+    assert r405.status_code == 405 and r405.get_json()["code"] == 405
+
+    # 触发 Flask 的 413（请求体超限），响应也必须能被前端 unwrap 解开
+    flask_app.config["MAX_CONTENT_LENGTH"] = 10
+    r413 = client.post(
+        "/v1/voice-clone/jobs",
+        data={"text": "payload exceeds the tiny limit", "audio": (io.BytesIO(wav_bytes()), "ref.wav")},
+        content_type="multipart/form-data",
+    )
+    assert r413.status_code == 413 and r413.get_json()["code"] == 413
+
+
+def test_delete_audio_and_preview_profile(client, wav_bytes):
+    created = upload(client, wav_bytes)
+    final = wait_job(client, created.get_json()["data"]["id"])
+    assert final["status"] == "succeeded"
+    fid = final["result"]["id"]
+    assert client.get(f"/v1/voice-clone/audio/{fid}").status_code == 200
+    deleted = client.delete(f"/v1/voice-clone/audio/{fid}")
+    assert deleted.status_code == 200 and deleted.get_json()["data"]["deleted"] is True
+    assert client.get(f"/v1/voice-clone/audio/{fid}").status_code == 404
+    assert client.get(f"/v1/voice-clone/meta/{fid}").status_code == 404
+
+    saved = client.post(
+        "/v1/voice-clone/profiles",
+        data={"name": "试听音色", "audio": (io.BytesIO(wav_bytes()), "ref.wav")},
+        content_type="multipart/form-data",
+    )
+    pid = saved.get_json()["data"]["profile"]["id"]
+    preview = client.get(f"/v1/voice-clone/profiles/{pid}/audio")
+    assert preview.status_code == 200 and preview.data[:4] == b"RIFF"
+    assert client.get("/v1/voice-clone/profiles/not-a-pid/audio").status_code == 404
+
+
+def test_health_does_not_leak_local_paths(client):
+    body = client.get("/health").get_json()
+    assert body["ok"] and "data_dir" not in body

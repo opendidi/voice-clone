@@ -383,6 +383,12 @@
   gap: 14px;
   .audio-player { flex: 1; }
 }
+.result-delete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
 .download-btn {
   flex-shrink: 0;
   padding: 9px 15px;

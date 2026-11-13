@@ -20,6 +20,8 @@ from app.config.settings import get_settings, load_dotenv
 load_dotenv()  # 必须早于 create_v1 / 引擎模块的 import
 
 from app.api.v1 import create_v1  # noqa: E402
+from app.config.protocol import StatusCode  # noqa: E402
+from app.util.protocol_handler import ProtocolBuilder  # noqa: E402
 
 logging.basicConfig(
     level=getattr(logging, get_settings().log_level, logging.INFO),
@@ -53,12 +55,43 @@ def _finish_request(resp):
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "")
     elapsed = (time.perf_counter() - getattr(g, "started_at", time.perf_counter())) * 1000
-    logger.info(
+    # 任务轮询每 0.8s 一次，INFO 级别会把日志刷满，降为 DEBUG
+    is_poll = request.method == "GET" and request.path.startswith("/v1/voice-clone/jobs/")
+    log = logger.debug if is_poll else logger.info
+    log(
         "%s %s -> %s (%.1fms) rid=%s",
         request.method, request.path, resp.status_code, elapsed,
         getattr(g, "request_id", ""),
     )
     return resp
+
+
+def _error_envelope(code: StatusCode, message: str):
+    """框架级错误（413/404/405/500）也返回统一 envelope，前端 unwrap 才不会拿到 HTML。"""
+    return jsonify(ProtocolBuilder.build_response(None, code, message)), code.value
+
+
+@app.errorhandler(StatusCode.REQUEST_ENTITY_TOO_LARGE.value)
+def _payload_too_large(_exc):
+    return _error_envelope(
+        StatusCode.REQUEST_ENTITY_TOO_LARGE, "上传内容超过 25MB 限制，请裁剪音频后重试"
+    )
+
+
+@app.errorhandler(StatusCode.NOT_FOUND.value)
+def _route_not_found(_exc):
+    return _error_envelope(StatusCode.NOT_FOUND, f"接口不存在：{request.path}")
+
+
+@app.errorhandler(StatusCode.METHOD_NOT_ALLOWED.value)
+def _method_not_allowed(_exc):
+    return _error_envelope(StatusCode.METHOD_NOT_ALLOWED, "请求方法不被允许")
+
+
+@app.errorhandler(StatusCode.INTERNAL_ERROR.value)
+def _internal_error(_exc):
+    # Flask 的 handle_exception 已经记录了完整栈，这里只负责把响应换成 envelope
+    return _error_envelope(StatusCode.INTERNAL_ERROR, "服务内部错误，请查看服务端日志")
 
 
 @app.get("/health")
@@ -70,7 +103,6 @@ def health():
         "auth_enabled": cfg.auth_enabled,
         "backend": os.environ.get("MOSS_TTS_BACKEND", "auto"),
         "max_inference_slots": cfg.max_inference_slots,
-        "data_dir": str(cfg.data_dir),
     })
 
 

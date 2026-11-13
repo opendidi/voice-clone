@@ -12,11 +12,14 @@ import {
 
 export interface ApiError {
   message?: string
-  response?: { data?: { message?: string; data?: { hint?: string } } }
+  response?: { status?: number; data?: { message?: string; data?: { hint?: string } } }
 }
 
 export function pickError(e: unknown): string {
   const err = e as ApiError
+  if (err?.response?.status === 401) {
+    return '未授权：请在浏览器 localStorage 设置 auth-token（API Key 的 JSON 字符串）'
+  }
   return err?.response?.data?.message || err?.message || '请求失败，请确认后端服务已启动'
 }
 

@@ -28,11 +28,27 @@
               {{ formatBytes(item.size) }} · {{ formatDate(item.created_at) }}
             </span>
           </div>
-          <button class="text-btn danger" :disabled="deleting === item.id" @click.stop="remove(item)">
-            {{ deleting === item.id ? '删除中' : '删除' }}
-          </button>
+          <div class="profile-actions">
+            <button class="text-btn" @click.stop="togglePreview(item.id)">
+              {{ previewId === item.id ? '关闭试听' : '试听' }}
+            </button>
+            <button class="text-btn danger" :disabled="deleting === item.id" @click.stop="remove(item)">
+              {{ deleting === item.id ? '删除中' : '删除' }}
+            </button>
+          </div>
         </li>
       </ul>
+      <div v-if="previewId" class="profile-preview">
+        <audio
+          v-if="preview.url.value"
+          :key="preview.url.value"
+          :src="preview.url.value"
+          controls
+          class="audio-player"
+        />
+        <span v-if="preview.loading.value">加载中…</span>
+        <span v-if="preview.failed.value" class="preview-fail">{{ preview.failed.value }}</span>
+      </div>
     </section>
 
     <section class="card">
@@ -110,6 +126,7 @@ import { message } from 'ant-design-vue'
 import {
   apiCreateTtsJob,
   apiDeleteVoiceProfile,
+  apiFetchProfileAudio,
   apiVoiceProfiles,
   apiVoiceTtsSegment,
   voiceCloneAudioUrl,
@@ -125,6 +142,9 @@ const {
   result, error, hint, running, elapsed, percent, stage, detail, start, cancel,
 } = useVoiceJob()
 const audioSource = useAudioSource()
+// 试听参考音频走另一个 fetcher，Blob URL 的创建/回收仍由同一个 hook 管理
+const preview = useAudioSource(apiFetchProfileAudio)
+const previewId = ref('')
 
 const profiles = ref<VoiceProfile[]>([])
 const loading = ref(false)
@@ -161,12 +181,27 @@ async function remove(item: VoiceProfile) {
     await apiDeleteVoiceProfile(item.id)
     message.success('已删除')
     if (selectedId.value === item.id) selectedId.value = ''
+    if (previewId.value === item.id) {
+      previewId.value = ''
+      preview.revoke()
+    }
     await load()
   } catch (e) {
     message.error(pickError(e))
   } finally {
     deleting.value = ''
   }
+}
+
+async function togglePreview(id: string) {
+  if (previewId.value === id) {
+    previewId.value = ''
+    preview.revoke()
+    return
+  }
+  previewId.value = id
+  const ok = await preview.load(id)
+  if (!ok && previewId.value === id) previewId.value = ''
 }
 
 function run() {

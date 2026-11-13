@@ -35,6 +35,8 @@ var/voice-profiles/<uid>/*      （参考声纹 + index.json）
 | `scripts/start_all.py` | 按 backend 决定是否起 bridge，统一启停 |
 | `scripts/moss_tts_bridge.py` | 常驻 ONNX 推理服务（可选 token、排队上限） |
 | `tests/` / `web/src/**/*.test.ts` | 后端 pytest / 前端 vitest |
+| `web/src/utils/envelope.ts` | 统一响应 envelope 的解包与容错 |
+| `.editorconfig` / `pytest.ini` / `requirements-dev.txt` | 编辑器换行、测试配置、测试依赖 |
 | `third_party/`、`.venv-moss/`、`var/` | 权重、虚拟环境、数据（均不进版本库） |
 
 ## 快速开始
@@ -87,7 +89,7 @@ cd web && pnpm install && pnpm dev            # http://localhost:5173
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/health` | 健康检查（公开，返回鉴权/并发/数据目录摘要） |
+| GET | `/health` | 健康检查（公开，返回鉴权/并发状态，不含本地路径） |
 | GET | `/v1/voice-clone/status` | 引擎探测、配置、安装指引（强制重探） |
 | POST | `/v1/voice-clone/jobs` | **推荐**：提交任务 → `202 + job_id` |
 | GET | `/v1/voice-clone/jobs/<id>` | 任务状态、阶段、进度、结果 |
@@ -96,6 +98,8 @@ cd web && pnpm install && pnpm dev            # http://localhost:5173
 | GET | `/v1/voice-clone/audio/<id>` | 播放 / `?download=1` 下载 WAV |
 | GET | `/v1/voice-clone/meta/<id>` | 生成元数据 |
 | GET/POST/DELETE | `/v1/voice-clone/profiles[/<id>]` | 语音档案 |
+| GET | `/v1/voice-clone/profiles/<id>/audio` | 试听已保存的参考音频（按用户隔离） |
+| DELETE | `/v1/voice-clone/audio/<id>` | 主动删除生成音频与元数据（含合成文本） |
 | POST | `/v1/voice-clone/tts` | 用已存音色同步合成（超 1000 字截断） |
 | POST | `/v1/voice-clone/tts/segment` | 句级合成（实时播报逐句调用） |
 
@@ -136,8 +140,8 @@ curl http://127.0.0.1:5002/v1/voice-clone/jobs/<job_id>
   排队超过 `VOICE_CLONE_SLOT_WAIT` 返回 503，崩溃残留锁靠 `SLOT_LEASE` 判定过期后原子重建。
 - 长文播报整个任务只占一个槽位，逐句合成时复用（`slot_already_held`），不会把闸门占满。
 - 推理在后台线程执行，HTTP 请求立即返回；前端轮询进度条，可随时取消。
-  取消是**协作式**：排队/分句阶段立即生效，已进入 CLI 子进程的推理无法中断，
-  但结果会被丢弃并删除已生成音频。
+  排队/分句/演示模式下取消立即生效，CLI 后端会真正 `terminate` 推理子进程；
+  in-process ONNX 与远程 HTTP 请求无法中途打断，但任务结果会被丢弃并删除已生成音频。
 - `probe()` 结果带 TTL 缓存，避免每次推理都遍历 728MB 权重目录和发 HTTP 探活；
   `/status` 刷新按钮强制重探。
 - 后台维护线程每 60s 回收过期产物、孤儿 json、临时目录、过期任务与 stale 锁文件。
@@ -161,8 +165,9 @@ curl http://127.0.0.1:5002/v1/voice-clone/jobs/<job_id>
 - 上传/录音统一在浏览器转成 48kHz 16-bit PCM WAV；校验 ≤20MB、≥0.8s，录音 15s 自动停止，
   并给出静音/削波/音量偏小的质量提示。
 - 提交后显示阶段进度与耗时，可取消；最近 6 条结果存 localStorage（1 小时过期）。
-- 音色库支持列表、选择、删除；播报支持**长文模式**（自动分句 + 拼接）与
+- 音色库支持列表、选择、删除与**试听参考音频**；播报支持**长文模式**（自动分句 + 拼接）与
   **逐句实时播报**（边合成下一句边播放当前句，可随时停止）。
+  生成结果可一键删除，服务端同步清除 WAV 与元数据里的合成文本。
 - 上传区支持键盘操作（Enter/Space）与 focus 样式。
 - 组件样式改用 SCSS：装 `sass` 预处理器（Vite 原生支持，无需额外插件），
   三个组件通过 `<style lang="scss" scoped src="...">` 引用同名 `.scss` 文件；
@@ -191,12 +196,27 @@ docker compose up -d --build
 ## 测试与 CI
 
 ```bash
-.venv-moss/Scripts/python.exe -m pytest -q tests     # 17 个后端单测/接口测试
+.venv-moss/Scripts/python.exe -m pip install -r requirements-dev.txt
+.venv-moss/Scripts/python.exe -m pytest               # 23 个后端测试（配置见 pytest.ini）
 .venv-moss/Scripts/python.exe scripts/smoke_test.py  # 路由 + 导入 + 静态路由关闭
-cd web && pnpm run type-check && pnpm run test && pnpm run build
+cd web && pnpm run type-check && pnpm run test && pnpm run build   # 13 个前端单测
 ```
 
 `.github/workflows/ci.yml` 在 push / PR 时跑：pytest + smoke_test、vue-tsc、vitest、vite build。
+`.editorconfig` + `.gitattributes` 统一换行与缩进（`.bat` 保留 CRLF，其余 LF）。
+
+## 故障排查
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| 所有接口 401 | 启用了 `VOICE_CLONE_API_KEY`，在浏览器执行 `localStorage.setItem('auth-token', JSON.stringify('<key>'))` 后刷新 |
+| 上传报 413 | 请求体超过 25MB：参考音频需 ≤20MB / ≤15 秒，裁剪后重试 |
+| 提交任务返回 503「队列已满」 | 并发达到 `VOICE_CLONE_MAX_INFERENCE`，稍后重试；调大前先确认内存够放多份权重 |
+| 任务长时间 running | 看主服务日志；`http` 后端执行 `curl http://127.0.0.1:18090/health`；首次加载权重可能数分钟 |
+| 中文被读成乱码 | CLI 后端已强制 `PYTHONUTF8=1`；若仍异常，检查 `infer_onnx.py` 是否按 UTF-8 读取 `--text-file` |
+| 浏览器报跨域错误 | 把前端 origin 加入 `VOICE_CLONE_CORS_ORIGINS`，不要直接设 `*` |
+| 引擎显示未就绪 | 展开状态卡片复制安装命令；或先设 `MOSS_TTS_BACKEND=mock` 验证链路 |
+| 前端提示「非预期响应」 | 通常是网关返回了 HTML 而非 envelope，检查 Nginx `/v1/` 反代与后端存活 |
 
 ## 已知限制 / 安全清单
 
@@ -217,3 +237,18 @@ cd web && pnpm run type-check && pnpm run test && pnpm run build
 - **P2**：`git init`；17 个 pytest + 10 个 vitest + CI；Dockerfile / compose / Nginx；
   waitress + 结构化日志 + 优雅停机 + `start_all.py`；probe TTL 缓存、原子写与定时清理；
   bridge token/排队上限/优雅停机；注释与文档重写。
+
+## 第二轮完善
+
+- **安全/健壮性**：修复档案 uid 与 pid 的路径穿越（含被篡改的 `index.json`）；
+  413/404/405/500 统一返回 envelope；`/health` 不再暴露本地绝对路径；
+  任务轮询日志降为 DEBUG；客户端 `unwrap` 对非 envelope 响应给出可读提示，401 提示配置 `auth-token`。
+- **推理链路**：CLI 后端改用 `Popen` + 轮询，取消可真正终止子进程，日志写文件避免管道死锁，
+  强制 `PYTHONUTF8=1` 解决 Windows 中文 prompt 乱码；探测页安装命令改用项目根绝对路径与 venv 解释器。
+- **隐私与功能**：新增 `DELETE /audio/<id>` 与 `GET /profiles/<id>/audio`，
+  前端可主动删除合成音频、试听参考音色；Blob 音频加载加递增序号，快速切换不会串音或泄漏 URL。
+- **测试/工程**：测试增至 23 个 pytest + 13 个 vitest（覆盖路径穿越、CLI 取消、错误 envelope、
+  删除/试听、安装命令）；新增 `pytest.ini`、`requirements-dev.txt`、`.editorconfig`；
+  抽出可单测的 `web/src/utils/envelope.ts`；CI 同步改用测试依赖文件。
+- **页面样式**：`sass@1.77.8` + Vite 预处理器配置，三个组件改用外链 SCSS，
+  共享 `_variables.scss` / `_mixins.scss`，115 个原有样式类全部保留。

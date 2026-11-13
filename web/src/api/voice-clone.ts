@@ -7,6 +7,9 @@
  */
 import http from '@/utils/request'
 import { getCache } from '@/utils/auth'
+import { unwrap, type Envelope } from '@/utils/envelope'
+
+export type { Envelope } from '@/utils/envelope'
 
 function resolveBase(): string {
   const configured = String(import.meta.env.VITE_GLOB_API_URL || '').replace(/\/$/, '')
@@ -42,19 +45,6 @@ export function buildHeaders(json = false): Record<string, string> {
   const token = getCache<string>('auth-token')
   if (token) headers.Authorization = `Bearer ${token}`
   return headers
-}
-
-export interface Envelope<T> {
-  code: number
-  data: T
-  message: string
-  request_id?: string
-  timestamp?: number
-}
-
-function unwrap<T>(res: Envelope<T>): T {
-  if (res.code === 200) return res.data
-  throw new Error(res.message || '请求失败')
 }
 
 export interface EngineCheck {
@@ -213,6 +203,20 @@ export function voiceCloneAudioUrl(id: string, download = false): string {
 export async function apiFetchAudio(id: string): Promise<Blob> {
   const resp = await fetch(voiceCloneAudioUrl(id), { headers: buildHeaders() })
   if (!resp.ok) throw new Error(`音频加载失败（${resp.status}）`)
+  return resp.blob()
+}
+
+/** 主动删除自己的合成音频与元数据（含合成文本），不必等 1 小时过期 */
+export async function apiDeleteGeneratedAudio(id: string): Promise<void> {
+  unwrap(await http.delete<Envelope<{ id: string }>>(`${API.audio}/${id}`, {
+    baseURL: BASE, headers: buildHeaders(),
+  }))
+}
+
+/** 试听语音档案里的参考音频（声纹数据，走带鉴权头的 fetch） */
+export async function apiFetchProfileAudio(id: string): Promise<Blob> {
+  const resp = await fetch(`${BASE}${API.profiles}/${id}/audio`, { headers: buildHeaders() })
+  if (!resp.ok) throw new Error(`参考音频加载失败（${resp.status}）`)
   return resp.blob()
 }
 

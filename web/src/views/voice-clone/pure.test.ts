@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { analyzeQuality, encodeWav, formatBytes, formatDuration, limitsFromStatus } from './audio'
 import { splitSentences } from './text'
+import { unwrap } from '@/utils/envelope'
 
 function fakeBuffer(frames: Float32Array[], rate = 48000): AudioBuffer {
   return {
@@ -97,5 +98,20 @@ describe('splitSentences', () => {
 
   it('限制最大句数', () => {
     expect(splitSentences('好。'.repeat(100), 120, 10).length).toBe(10)
+  })
+})
+
+describe('unwrap', () => {
+  it('解包正常 envelope', () => {
+    expect(unwrap({ code: 200, data: { id: 'abc' }, message: 'ok' })).toEqual({ id: 'abc' })
+  })
+
+  it('非 200 时使用后端消息', () => {
+    expect(() => unwrap({ code: 503, data: null, message: '引擎未就绪' })).toThrow('引擎未就绪')
+  })
+
+  it('响应体不是 envelope 时给出可读提示', () => {
+    expect(() => unwrap(undefined as never)).toThrow('非预期响应')
+    expect(() => unwrap('<!doctype html>' as never)).toThrow('非预期响应')
   })
 })

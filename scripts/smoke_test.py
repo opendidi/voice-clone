@@ -30,6 +30,7 @@ expected = [
     "/v1/voice-clone/audio/<file_id>",
     "/v1/voice-clone/profiles",
     "/v1/voice-clone/profiles/<pid>",
+    "/v1/voice-clone/profiles/<pid>/audio",
     "/v1/voice-clone/tts",
     "/v1/voice-clone/tts/segment",
 ]

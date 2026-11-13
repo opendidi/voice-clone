@@ -331,12 +331,16 @@ def _probe_uncached() -> dict[str, Any]:
     demo = backend == "mock"
 
     repo_hint = str(repo)
+    # 用绝对路径引用项目根的 requirements，避免 cd 到仓库后相对路径找不到文件；
+    # 解释器也显式指向独立 venv，防止把 ONNX 依赖装进别的环境。
+    py = _default_python()
+    req_file = PROJECT_ROOT / "requirements-moss-tts.txt"
     setup = [
         "git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git " + repo_hint,
+        f'"{py}" -m pip install -r "{req_file}"',
         "cd " + repo_hint,
-        "pip install -r requirements-moss-tts.txt   # 见项目根目录，或手动装下面的包",
-        "pip install onnxruntime numpy soundfile sentencepiece huggingface_hub",
-        "python infer_onnx.py --prompt-audio-path assets/audio/zh_1.wav --text \"测试一下语音克隆\"",
+        f'"{py}" infer_onnx.py --prompt-audio-path assets/audio/zh_1.wav '
+        '--text "测试一下语音克隆"',
         "# 首次运行会自动下载 ONNX 权重到 models/ 目录",
     ]
     if backend in ("onnx", "cli"):
@@ -477,8 +481,11 @@ def _get_runtime(cfg: MossConfig, opts: SynthOptions) -> Any:
 
 
 def _synthesize_onnx(
-    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path
+    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
+    if cancel_event is not None and cancel_event.is_set():
+        raise InferenceError("任务已取消")
     with _RUNTIME_LOCK:
         runtime = _get_runtime(cfg, opts)
         # 采样参数每次调用都显式传入：帧数 / 采样模式可随请求变化，不重建 session
@@ -503,10 +510,28 @@ def _synthesize_onnx(
     }
 
 
+def _terminate_process(proc: subprocess.Popen) -> None:
+    """尽力终止推理子进程，避免取消后还占着 CPU / 内存。"""
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
+        try:
+            proc.kill()
+            proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            logger.warning("推理进程未能终止：pid=%s", proc.pid)
+
+
 def _synthesize_cli(
-    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path
+    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
-    """子进程方式：允许模型跑在独立 conda / venv 里，不污染 Flask 主环境。"""
+    """子进程方式：允许模型跑在独立 conda / venv 里，不污染 Flask 主环境。
+
+    用 Popen + 轮询而不是 subprocess.run，任务取消时才能真正杀掉推理进程；
+    日志重定向到文件，避免管道缓冲区被模型日志打满导致死锁。
+    """
     script = cfg.repo_dir / "infer_onnx.py"
     if not script.is_file():
         raise EngineNotReady("找不到 infer_onnx.py", "请检查 MOSS_TTS_REPO 配置")
@@ -535,34 +560,48 @@ def _synthesize_cli(
 
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
+    # Windows 上 Python 的 open() 默认走 GBK，会把中文 prompt.txt 读成乱码
+    env["PYTHONUTF8"] = "1"
     env.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(cfg.repo_dir),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=cfg.timeout,
-            env=env,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise InferenceError(f"推理超时（{cfg.timeout}s），可减小文本长度或调大 MOSS_TTS_TIMEOUT") from exc
-    except (OSError, ValueError) as exc:
-        raise InferenceError(f"无法启动推理进程：{exc}") from exc
 
-    tail = (proc.stderr or proc.stdout or "").strip()[-1200:]
+    log_path = work / "inference.log"
+    deadline = time.monotonic() + cfg.timeout
+    with log_path.open("w", encoding="utf-8") as log_file:
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=str(cfg.repo_dir), stdout=log_file,
+                stderr=subprocess.STDOUT, env=env,
+            )
+        except (OSError, ValueError) as exc:
+            raise InferenceError(f"无法启动推理进程：{exc}") from exc
+        while proc.poll() is None:
+            if cancel_event is not None and cancel_event.is_set():
+                _terminate_process(proc)
+                raise InferenceError("任务已取消，推理进程已终止")
+            if time.monotonic() > deadline:
+                _terminate_process(proc)
+                raise InferenceError(
+                    f"推理超时（{cfg.timeout}s），可减小文本长度或调大 MOSS_TTS_TIMEOUT"
+                )
+            time.sleep(0.2)
+
+    with log_path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        handle.seek(max(0, handle.tell() - 4096))
+        tail = handle.read().decode("utf-8", errors="replace").strip()[-1200:]
+
     if proc.returncode != 0 or not out.is_file():
         raise InferenceError(f"推理进程退出码 {proc.returncode}：{tail or '未生成音频文件'}")
     return {"sample_rate": 48000, "log": tail[-400:]}
 
 
 def _synthesize_http(
-    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path
+    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """远程推理服务协议见 scripts/moss_tts_bridge.py。"""
+    if cancel_event is not None and cancel_event.is_set():
+        raise InferenceError("任务已取消")
     if not cfg.service_url:
         raise EngineNotReady("未配置远程推理服务", "设置 MOSS_TTS_SERVICE_URL 或改用本机 ONNX 后端")
     payload = {
@@ -625,9 +664,12 @@ def _write_demo_wav(path: Path, seconds: float = 1.4, rate: int = 48000) -> None
 
 
 def _synthesize_mock(
-    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path
+    cfg: MossConfig, opts: SynthOptions, text: str, ref: Path, out: Path, work: Path,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
-    time.sleep(0.6)  # 让前端 loading 态可见
+    # wait 会在取消时提前返回 True，演示模式也能即时响应取消
+    if cancel_event is not None and cancel_event.wait(0.6):
+        raise InferenceError("任务已取消")
     _write_demo_wav(out)
     return {
         "sample_rate": 48000,
@@ -710,7 +752,7 @@ def synthesize(
                 raise InferenceError("任务已取消")
             if progress is not None:
                 progress("正在推理", 60)
-            info = handlers[backend](cfg, opts, text, ref, out, work)
+            info = handlers[backend](cfg, opts, text, ref, out, work, cancel_event)
             if not out.is_file() or out.stat().st_size < 1024:
                 raise InferenceError("推理完成但未生成有效音频文件")
             if progress is not None:

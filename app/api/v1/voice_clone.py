@@ -302,9 +302,16 @@ def voice_clone_run():
         shutil.rmtree(work, ignore_errors=True)
 
 
-@voice_clone_api.route("/audio/<file_id>", methods=["GET", "HEAD"])
+@voice_clone_api.route("/audio/<file_id>", methods=["GET", "HEAD", "DELETE"])
 @token_required
 def voice_clone_audio(file_id: str):
+    if request.method == "DELETE":
+        # 归属校验通过才允许删除；用户可主动清掉自己的合成音频（含元数据里的文本）
+        if moss_tts.get_output_path(file_id, current_uid()) is None:
+            return _error(StatusCode.NOT_FOUND, "音频不存在或已过期")
+        moss_tts.remove_output(file_id)
+        return _ok({"id": file_id, "deleted": True}, "音频已删除")
+
     path = moss_tts.get_output_path(file_id, current_uid())
     if path is None:
         return _error(StatusCode.NOT_FOUND, "音频不存在或已过期")
@@ -366,6 +373,24 @@ def delete_profile(pid: str):
     if not voice_profiles.delete_profile(current_uid(), pid):
         return _error(StatusCode.NOT_FOUND, "档案不存在或已删除")
     return _ok({"ok": True}, "语音档案已删除")
+
+
+@voice_clone_api.route("/profiles/<pid>/audio", methods=["GET", "HEAD"])
+@token_required
+def voice_profile_audio(pid: str):
+    """试听已保存的参考音频（声纹数据，同样按 uid 隔离，不设公开缓存）。"""
+    path = voice_profiles.get_profile_ref(current_uid(), pid)
+    if path is None:
+        return _error(StatusCode.NOT_FOUND, "语音档案不存在或音频已删除")
+    resp = send_file(
+        path,
+        mimetype="audio/wav",
+        as_attachment=False,
+        download_name=f"voice-profile-{pid}.wav",
+        conditional=True,
+    )
+    resp.headers["Cache-Control"] = "private, max-age=600"
+    return resp
 
 
 # --------------------------------------------------------------------------- #
